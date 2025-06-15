@@ -11,6 +11,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const sourceDocuments = document.getElementById('source-documents');
     const documentList = document.getElementById('document-list');
     const currentChatTitle = document.getElementById('current-chat-title');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarToggle = document.getElementById('sidebar-toggle');
+    const mainContent = document.getElementById('main-content');
+    const searchInput = document.getElementById('search-conversations');
+    const searchBtn = document.getElementById('search-btn');
+    const followUpSuggestions = document.getElementById('follow-up-suggestions');
+    
+    // Initialize enhanced features
+    initializeSidebarToggle();
+    initializeSearch();
+    initializeFollowUpSuggestions();
     
     // Auto-resize textarea
     userInput.addEventListener('input', function() {
@@ -110,24 +121,58 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Function to add message to chat
-    function addMessage(role, content) {
+    // Enhanced message function with hover actions and expandable responses
+    function addMessageEnhanced(role, content, isLongResponse = false) {
         const messageDiv = document.createElement('div');
         messageDiv.className = role === 'user' ? 'user-message' : 'assistant-message';
         
         const messageContent = document.createElement('div');
         messageContent.className = 'message-content';
         
-        // Process message content (handle markdown-like syntax)
-        let formattedContent = content;
+        // Add hover actions
+        const messageActions = document.createElement('div');
+        messageActions.className = 'message-actions';
         
-        // Convert code blocks
-        formattedContent = formattedContent.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+        // Copy button
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'message-action-btn';
+        copyBtn.innerHTML = '<i data-feather="copy"></i>';
+        copyBtn.title = 'Copy message';
+        copyBtn.addEventListener('click', () => copyToClipboard(content));
         
-        // Convert line breaks to <br>
-        formattedContent = formattedContent.replace(/\n/g, '<br>');
+        // Edit button (only for user messages)
+        if (role === 'user') {
+            const editBtn = document.createElement('button');
+            editBtn.className = 'message-action-btn';
+            editBtn.innerHTML = '<i data-feather="edit-2"></i>';
+            editBtn.title = 'Edit message';
+            editBtn.addEventListener('click', () => editMessage(messageDiv, content));
+            messageActions.appendChild(editBtn);
+        }
         
-        messageContent.innerHTML = formattedContent;
+        messageActions.appendChild(copyBtn);
+        messageDiv.appendChild(messageActions);
+        
+        // Handle expandable responses for long content
+        if (isLongResponse && content.length > 500) {
+            const responseContainer = document.createElement('div');
+            responseContainer.className = 'response-expandable';
+            
+            const responseContent = document.createElement('div');
+            responseContent.className = 'response-content';
+            responseContent.innerHTML = formatMessageContent(content);
+            
+            const expandToggle = document.createElement('button');
+            expandToggle.className = 'expand-toggle';
+            expandToggle.textContent = 'Show more';
+            expandToggle.addEventListener('click', () => toggleExpand(responseContent, expandToggle));
+            
+            responseContainer.appendChild(responseContent);
+            responseContainer.appendChild(expandToggle);
+            messageContent.appendChild(responseContainer);
+        } else {
+            messageContent.innerHTML = formatMessageContent(content);
+        }
         
         const timestamp = document.createElement('div');
         timestamp.className = 'message-timestamp';
@@ -144,6 +189,180 @@ document.addEventListener('DOMContentLoaded', function() {
         chatContainer.appendChild(clearFloat);
         
         chatContainer.scrollTop = chatContainer.scrollHeight;
+        
+        // Re-initialize feather icons for new buttons
+        feather.replace();
+        
+        return messageDiv;
+    }
+    
+    // Helper function to format message content
+    function formatMessageContent(content) {
+        let formattedContent = content;
+        formattedContent = formattedContent.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+        formattedContent = formattedContent.replace(/\n/g, '<br>');
+        return formattedContent;
+    }
+    
+    // Helper function to toggle expandable responses
+    function toggleExpand(contentDiv, toggleBtn) {
+        if (contentDiv.classList.contains('expanded')) {
+            contentDiv.classList.remove('expanded');
+            toggleBtn.textContent = 'Show more';
+        } else {
+            contentDiv.classList.add('expanded');
+            toggleBtn.textContent = 'Show less';
+        }
+    }
+    
+    // Helper function to copy text to clipboard
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            showToast('Message copied to clipboard');
+        });
+    }
+    
+    // Helper function to edit message
+    function editMessage(messageDiv, originalContent) {
+        userInput.value = originalContent;
+        userInput.focus();
+        userInput.style.height = 'auto';
+        userInput.style.height = (userInput.scrollHeight) + 'px';
+    }
+    
+    // Initialize sidebar toggle functionality
+    function initializeSidebarToggle() {
+        if (sidebarToggle) {
+            sidebarToggle.addEventListener('click', () => {
+                sidebar.classList.toggle('show');
+            });
+        }
+        
+        // Close sidebar when clicking outside on mobile
+        document.addEventListener('click', (e) => {
+            if (window.innerWidth <= 768 && 
+                sidebar.classList.contains('show') && 
+                !sidebar.contains(e.target) && 
+                !sidebarToggle.contains(e.target)) {
+                sidebar.classList.remove('show');
+            }
+        });
+    }
+    
+    // Initialize search functionality
+    function initializeSearch() {
+        let searchTimeout;
+        
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    filterChatSessions(e.target.value);
+                }, 300);
+            });
+        }
+        
+        if (searchBtn) {
+            searchBtn.addEventListener('click', () => {
+                filterChatSessions(searchInput.value);
+            });
+        }
+    }
+    
+    // Filter chat sessions based on search query
+    function filterChatSessions(query) {
+        const sessions = document.querySelectorAll('.chat-session-wrapper');
+        const lowercaseQuery = query.toLowerCase();
+        let visibleCount = 0;
+        
+        sessions.forEach(session => {
+            const sessionText = session.textContent.toLowerCase();
+            if (sessionText.includes(lowercaseQuery)) {
+                session.style.display = 'block';
+                visibleCount++;
+            } else {
+                session.style.display = 'none';
+            }
+        });
+        
+        // Show "no results" message if needed
+        const existingNoResults = document.querySelector('.no-results');
+        if (existingNoResults) {
+            existingNoResults.remove();
+        }
+        
+        if (visibleCount === 0 && query.length > 0) {
+            const noResults = document.createElement('div');
+            noResults.className = 'no-results';
+            noResults.textContent = 'No conversations found';
+            chatSessions.appendChild(noResults);
+        }
+    }
+    
+    // Initialize follow-up suggestions
+    function initializeFollowUpSuggestions() {
+        // Hide suggestions initially
+        followUpSuggestions.classList.add('d-none');
+    }
+    
+    // Show follow-up suggestions after assistant response
+    function showFollowUpSuggestions(suggestions = null) {
+        if (!suggestions) {
+            suggestions = generateContextualSuggestions();
+        }
+        
+        const suggestionsContainer = followUpSuggestions.querySelector('div');
+        suggestionsContainer.innerHTML = '';
+        
+        suggestions.forEach(suggestion => {
+            const chip = document.createElement('span');
+            chip.className = 'suggestion-chip';
+            chip.textContent = suggestion;
+            chip.addEventListener('click', () => {
+                userInput.value = suggestion;
+                userInput.focus();
+                hideFollowUpSuggestions();
+            });
+            suggestionsContainer.appendChild(chip);
+        });
+        
+        followUpSuggestions.classList.remove('d-none');
+    }
+    
+    // Hide follow-up suggestions
+    function hideFollowUpSuggestions() {
+        followUpSuggestions.classList.add('d-none');
+    }
+    
+    // Generate contextual suggestions
+    function generateContextualSuggestions() {
+        const suggestions = [
+            "Can you elaborate on that?",
+            "What are the key points?",
+            "How can I apply this?",
+            "What should I know next?",
+            "Can you give me an example?"
+        ];
+        
+        // Shuffle and return 3 random suggestions
+        return suggestions.sort(() => 0.5 - Math.random()).slice(0, 3);
+    }
+    
+    // Enhanced addMessage function to replace the original
+    function addMessage(role, content) {
+        const isLongResponse = role === 'assistant' && content.length > 500;
+        const messageDiv = addMessageEnhanced(role, content, isLongResponse);
+        
+        // Show follow-up suggestions after assistant responses
+        if (role === 'assistant') {
+            setTimeout(() => {
+                showFollowUpSuggestions();
+            }, 1000);
+        } else {
+            hideFollowUpSuggestions();
+        }
+        
+        return messageDiv;
     }
     
     // Function to add loading message
@@ -227,7 +446,51 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Load chat sessions with delete buttons
+    // Enhanced chat session creation with hover actions
+    function createChatSessionElement(session) {
+        const sessionWrapper = document.createElement('div');
+        sessionWrapper.className = 'chat-session-wrapper';
+        
+        const sessionDiv = document.createElement('div');
+        sessionDiv.className = 'chat-session nav-link';
+        sessionDiv.dataset.id = session.id;
+        
+        const sessionTitle = document.createElement('span');
+        sessionTitle.className = 'chat-session-title';
+        sessionTitle.textContent = session.title;
+        
+        const sessionActions = document.createElement('div');
+        sessionActions.className = 'chat-session-actions';
+        
+        // Copy session ID button
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'chat-action-btn';
+        copyBtn.innerHTML = '<i data-feather="copy"></i>';
+        copyBtn.title = 'Copy session ID';
+        copyBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            copyToClipboard(session.id);
+        });
+        
+        // Delete button
+        const deleteBtn = createDeleteButton(session.id);
+        
+        sessionActions.appendChild(copyBtn);
+        sessionActions.appendChild(deleteBtn);
+        
+        sessionDiv.appendChild(sessionTitle);
+        sessionDiv.appendChild(sessionActions);
+        sessionWrapper.appendChild(sessionDiv);
+        
+        // Add click handler for session switching
+        sessionDiv.addEventListener('click', () => {
+            switchSession(session.id);
+        });
+        
+        return sessionWrapper;
+    }
+    
+    // Load chat sessions with enhanced features
     async function loadChatSessions() {
         try {
             const response = await fetch('/api/sessions');
@@ -244,27 +507,15 @@ document.addEventListener('DOMContentLoaded', function() {
             // Get current session ID
             const currentSessionId = document.querySelector('.chat-session.active')?.dataset.id;
             
-            // Add each session
+            // Add each session using enhanced creation
             data.sessions.forEach(session => {
-                const sessionWrapper = document.createElement('div');
-                sessionWrapper.className = 'chat-session-wrapper d-flex align-items-center justify-content-between';
+                const sessionWrapper = createChatSessionElement(session);
                 
-                const sessionElement = document.createElement('div');
-                sessionElement.className = 'chat-session flex-grow-1';
+                // Set active state if this is the current session
                 if (currentSessionId === session.id) {
-                    sessionElement.classList.add('active');
+                    sessionWrapper.querySelector('.chat-session').classList.add('active');
                 }
-                sessionElement.dataset.id = session.id;
-                sessionElement.textContent = session.title;
                 
-                sessionElement.addEventListener('click', function() {
-                    switchSession(session.id);
-                });
-                
-                const deleteBtn = createDeleteButton(session.id);
-                
-                sessionWrapper.appendChild(sessionElement);
-                sessionWrapper.appendChild(deleteBtn);
                 chatSessions.appendChild(sessionWrapper);
             });
             
@@ -369,6 +620,47 @@ document.addEventListener('DOMContentLoaded', function() {
             // Add welcome message as fallback
             addMessage('assistant', 'Hello! I\'m Zetheta AI, your document-aware assistant. How can I help you today?');
         }
+    }
+    
+    // Toast notification system
+    function showToast(message, duration = 3000) {
+        // Remove existing toast
+        const existingToast = document.querySelector('.toast-notification');
+        if (existingToast) {
+            existingToast.remove();
+        }
+        
+        const toast = document.createElement('div');
+        toast.className = 'toast-notification';
+        toast.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--bs-success);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 6px;
+            z-index: 10000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        `;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        // Fade in
+        setTimeout(() => {
+            toast.style.opacity = '1';
+        }, 100);
+        
+        // Fade out and remove
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        }, duration);
     }
     
     // Initial loading of chat sessions and history
